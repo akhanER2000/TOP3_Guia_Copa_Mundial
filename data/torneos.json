@@ -1,0 +1,26 @@
+[
+  {
+    "torneo_id": 1,
+    "nombre": "Copa Mundial FIFA 2018",
+    "anio": 2018,
+    "pais_sede": "Rusia",
+    "campeon": "Francia",
+    "subcampeon": "Croacia"
+  },
+  {
+    "torneo_id": 2,
+    "nombre": "Copa Mundial FIFA 2014",
+    "anio": 2014,
+    "pais_sede": "Brasil",
+    "campeon": "Alemania",
+    "subcampeon": "Argentina"
+  },
+  {
+    "torneo_id": 3,
+    "nombre": "Copa Mundial FIFA 2022",
+    "anio": 2022,
+    "pais_sede": "Qatar",
+    "campeon": "Argentina",
+    "subcampeon": "Francia"
+  }
+]

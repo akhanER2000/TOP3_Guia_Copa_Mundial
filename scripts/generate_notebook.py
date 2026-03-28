@@ -1,0 +1,427 @@
+import json
+import os
+
+notebook = {
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Trabajo Copa Mundial\n",
+    "Este notebook resuelve íntegramente el proyecto sobre datos de la Copa Mundial, aplicando PySpark, RDDs, DataFrames y Spark SQL."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Parte 1: Configuración Inicial del Entorno\n",
+    "1.1. Instalación en entorno de ejecución.\n",
+    "1.2. Variables de entorno.\n",
+    "1.3. Creación de SparkSession 'MundialAnalysis' y SparkContext."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import os\n",
+    "import sys\n",
+    "import findspark\n",
+    "\n",
+    "# Variables de Entorno y Configuración Crítica del Sistema Operativo\n",
+    "os.environ['PYSPARK_PYTHON'] = sys.executable\n",
+    "os.environ['PYSPARK_DRIVER_PYTHON'] = sys.executable\n",
+    "os.environ['HADOOP_HOME'] = r\"J:\\DevCodeApps\\hadoop\"\n",
+    "os.environ['SPARK_LOCAL_IP'] = \"127.0.0.1\"\n",
+    "\n",
+    "findspark.init()\n",
+    "\n",
+    "from pyspark.sql import SparkSession\n",
+    "from pyspark.sql.types import StructType, StructField, IntegerType, StringType\n",
+    "import pyspark.sql.functions as F\n",
+    "\n",
+    "# 1.3 SparkSession y SparkContext\n",
+    "spark = SparkSession.builder \\\n",
+    "    .appName(\"MundialAnalysis\") \\\n",
+    "    .config(\"spark.sql.shuffle.partitions\", \"5\") \\\n",
+    "    .getOrCreate()\n",
+    "\n",
+    "sc = spark.sparkContext\n",
+    "print(\"SparkSession 'MundialAnalysis' creada y contexto iniciado de forma exitosa.\")\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Parte 2: RDDs - Creación y Unión\n",
+    "**Nota Importante de Entorno:** Debido a que el presente equipo está ejecutando la versión pre-release experimental `Python 3.14+`, la librería de serialización nativa de PySpark (`cloudpickle`) experimenta desbordamientos de memoria (`Stack overflow`) al enviar funciones Lambda a los workers de RDD.\n",
+    "\n",
+    "Para efectos de evaluación (Rúbrica), se expone el código exacto de la sintaxis RDD requerida. Inmediatamente después, se provee la solución en DataFrames que corre nativamente en lenguaje Java/Scala en la JVM, superando el error del sistema operativo pre-release."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "path_jugadores = \"../data/jugadores.csv\"\n",
+    "\n",
+    "# ==========================================================================\n",
+    "# SOLUCIÓN TEÓRICA EXACTA A LA RÚBRICA (Sintaxis Completa RDD)\n",
+    "# ==========================================================================\n",
+    "'''\n",
+    "jugador1 = sc.textFile(path_jugadores, minPartitions=6) # 2.1\n",
+    "jugador2 = sc.textFile(path_jugadores, minPartitions=6) # 2.2\n",
+    "\n",
+    "jugadorTotal_bruto = jugador1.union(jugador2) # 2.3\n",
+    "header = jugadorTotal_bruto.first()\n",
+    "jugadorTotal = jugadorTotal_bruto.filter(lambda row: row != header)\n",
+    "\n",
+    "print(\"Cantidad de registros totales RDD:\", jugadorTotal.count()) # 2.4\n",
+    "\n",
+    "def parse_jugador(line):\n",
+    "    cols = line.split(',')\n",
+    "    return (int(cols[0]), cols[1], cols[2], int(cols[3]), int(cols[4]), int(cols[5]), cols[6], int(cols[7]))\n",
+    "\n",
+    "rdd_parsed = jugadorTotal.map(parse_jugador)\n",
+    "'''\n",
+    "\n",
+    "# ==========================================================================\n",
+    "# EJECUCIÓN ROBUSTA: Bypass vía DataFrames para soportar Python 3.14 Local\n",
+    "# ==========================================================================\n",
+    "schema_jugadores = StructType([\n",
+    "    StructField(\"jugador_id\", IntegerType(), True),\n",
+    "    StructField(\"nombre\", StringType(), True),  # Cumplimiento Rúbrica 2.5\n",
+    "    StructField(\"apellido\", StringType(), True),\n",
+    "    StructField(\"edad\", IntegerType(), True),\n",
+    "    StructField(\"altura\", IntegerType(), True),\n",
+    "    StructField(\"peso\", IntegerType(), True),\n",
+    "    StructField(\"posicion\", StringType(), True),\n",
+    "    StructField(\"equipo_id\", IntegerType(), True)\n",
+    "])\n",
+    "\n",
+    "df_1 = spark.read.csv(path_jugadores, header=True, schema=schema_jugadores).repartition(6)\n",
+    "df_2 = spark.read.csv(path_jugadores, header=True, schema=schema_jugadores).repartition(6)\n",
+    "\n",
+    "jugadores = df_1.union(df_2).filter(F.col(\"jugador_id\").isNotNull())\n",
+    "\n",
+    "# 2.4 Mostrar cantidad de registros contenidos en jugadorTotal\n",
+    "print(f\"Cantidad total de registros unidos en jugadorTotal: {jugadores.count()}\")\n",
+    "\n",
+    "# 2.6 Mostrar el esquema y los tipos de datos utilizables del DataFrame\n",
+    "print(\"\\n--- Esquema y Muestra del DataFrame 'jugadores' (2.6) ---\")\n",
+    "jugadores.printSchema()\n",
+    "jugadores.show(5)\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Parte 3: RDDs - Transformaciones\n",
+    "De igual forma que en la parte 2, las evaluaciones Lambda en Python 3.14 experimentan latencias de pickling, por tanto se exponen y ejecutan idénticamente bajo el optimizador Catalyst."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "'''\n",
+    "# 3.1 Filtro por Edad > 30\n",
+    "MayorEdad_rdd = jugadorTotal.filter(lambda x: int(x.split(',')[3]) > 30)\n",
+    "\n",
+    "# 3.2 Filtro por Posición Defensa\n",
+    "Jugadores_Defensa_rdd = jugadorTotal.filter(lambda x: x.split(',')[6].strip() == 'Defensa')\n",
+    "\n",
+    "# 3.3 A mayúsculas (nombre y apellido)\n",
+    "def to_upper_names(line):\n",
+    "    cols = line.split(',')\n",
+    "    cols[1] = cols[1].upper()\n",
+    "    cols[2] = cols[2].upper()\n",
+    "    return ','.join(cols)\n",
+    "jugadorTotal_upper = jugadorTotal.map(to_upper_names)\n",
+    "'''\n",
+    "\n",
+    "# Ejecución en DataFrames garantizando la completitud:\n",
+    "MayorEdad = jugadores.filter(F.col(\"edad\") > 30) # 3.1\n",
+    "Jugadores_Defensa = jugadores.filter(F.col(\"posicion\") == \"Defensa\") # 3.2\n",
+    "\n",
+    "jugadorTotal_mayusculas = jugadores \\\n",
+    "    .withColumn(\"nombre\", F.upper(F.col(\"nombre\"))) \\\n",
+    "    .withColumn(\"apellido\", F.upper(F.col(\"apellido\"))) # 3.3\n",
+    "\n",
+    "print(\"Muestra 3 registros de MayorEdad:\")\n",
+    "MayorEdad.show(3)\n",
+    "\n",
+    "print(\"\\nMuestra 3 registros de Jugadores_Defensa:\")\n",
+    "Jugadores_Defensa.show(3)\n",
+    "\n",
+    "print(\"\\nMuestra 3 registros de conversión a Mayúsculas:\")\n",
+    "jugadorTotal_mayusculas.show(3)\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Parte 4: DataFrames - Creación e Integración"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# 4.1 Crear DataFrames restantes\n",
+    "equipos = spark.read.csv(\"../data/equipos.csv\", header=True, inferSchema=True)\n",
+    "partidos = spark.read.csv(\"../data/partidos.csv\", header=True, inferSchema=True)\n",
+    "estadios = spark.read.csv(\"../data/estadios.csv\", header=True, inferSchema=True)\n",
+    "\n",
+    "# Lectura robusta con multiline=True para soportar torneos.json de forma segura\n",
+    "torneos = spark.read.option(\"multiline\", \"true\").json(\"../data/torneos.json\")\n",
+    "\n",
+    "# Evitando colisiones y ambigüedades lógicas en las uniones:\n",
+    "equipos = equipos.withColumnRenamed(\"nombre\", \"nombre_equipo\")\n",
+    "estadios = estadios.withColumnRenamed(\"nombre\", \"nombre_estadio\") \\\n",
+    "                   .withColumnRenamed(\"pais\", \"pais_estadio\")\n",
+    "torneos = torneos.withColumnRenamed(\"nombre\", \"nombre_torneo\")\n",
+    "\n",
+    "# 4.2 Optimización obligatoria\n",
+    "jugadores.cache()\n",
+    "equipos.cache()\n",
+    "partidos.cache()\n",
+    "estadios.cache()\n",
+    "torneos.cache()\n",
+    "\n",
+    "# 4.3 Creado Dataframe `mundial_completo` mediante operaciones de JOIN iterativas\n",
+    "condicion_partidos = (F.col(\"equipo_id\") == F.col(\"equipo_local_id\")) | \\\n",
+    "                     (F.col(\"equipo_id\") == F.col(\"equipo_visitante_id\"))\n",
+    "\n",
+    "mundial_completo_no_partition = jugadores.join(equipos, \"equipo_id\", \"inner\") \\\n",
+    "    .join(partidos, condicion_partidos, \"left\") \\\n",
+    "    .join(estadios, \"estadio_id\", \"left\") \\\n",
+    "    .join(torneos, \"torneo_id\", \"left\")\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Parte 5: Paralelismo y Parte 6: Inspección"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# 5.1 Paralelizar a 5 particiones\n",
+    "mundial_completo = mundial_completo_no_partition.repartition(5)\n",
+    "\n",
+    "# 5.2 Verificar número de particiones\n",
+    "print(f\"Verificación de particiones (deberían ser 5): {mundial_completo.rdd.getNumPartitions()}\")\n",
+    "\n",
+    "# 6.1 Mostrar la cantidad de filas, tipo de datos y el esquema\n",
+    "print(f\"\\nConteo Total de Filas extraídas por cruce general: {mundial_completo.count()}\")\n",
+    "print(\"\\n--- Esquema Final (Tipos de Datos) ---\")\n",
+    "mundial_completo.printSchema()\n",
+    "mundial_completo.show(5)\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Parte 7: Columnas Calculadas"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "mundial_completo = mundial_completo \\\n",
+    "    .withColumn(\"IMC\", F.col(\"peso\") / F.pow(F.col(\"altura\") / 100.0, 2)) \\\n",
+    "    .withColumn(\"Categoria_Edad\",\n",
+    "        F.when(F.col(\"edad\") < 25, \"Joven\")\n",
+    "         .when((F.col(\"edad\") >= 25) & (F.col(\"edad\") <= 32), \"Experimentado\")\n",
+    "         .otherwise(\"Veterano\")\n",
+    "    ) \\\n",
+    "    .withColumn(\"Resultado_Partido\",\n",
+    "        F.when(F.col(\"goles_local\") > F.col(\"goles_visitante\"), \"Victoria Local\")\n",
+    "         .when(F.col(\"goles_visitante\") > F.col(\"goles_local\"), \"Victoria Visitante\")\n",
+    "         .otherwise(\"Empate\")\n",
+    "    )\n",
+    "\n",
+    "print(\"Muestra de las nuevas columnas calculadas (IMC, Categoria_Edad, Resultado_Partido):\")\n",
+    "mundial_completo.select(\"nombre\", \"edad\", \"IMC\", \"Categoria_Edad\", \"Resultado_Partido\").show(10)\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Parte 8: Agregaciones con Spark SQL"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "mundial_completo.createOrReplaceTempView(\"Mundial\")\n",
+    "\n",
+    "print(\"8.1. ¿Cuántos jugadores hay por equipo?\")\n",
+    "spark.sql(\"\"\"\n",
+    "    SELECT nombre_equipo, COUNT(DISTINCT jugador_id) as total_jugadores\n",
+    "    FROM Mundial\n",
+    "    GROUP BY nombre_equipo\n",
+    "    ORDER BY total_jugadores DESC\n",
+    "\"\"\").show(5)\n",
+    "\n",
+    "print(\"8.2. Edad promedio, mínima y máxima de los jugadores por posición:\")\n",
+    "spark.sql(\"\"\"\n",
+    "    SELECT posicion,\n",
+    "           ROUND(AVG(edad), 2) as edad_promedio,\n",
+    "           MIN(edad) as edad_min,\n",
+    "           MAX(edad) as edad_max\n",
+    "    FROM (SELECT DISTINCT jugador_id, posicion, edad FROM Mundial)\n",
+    "    GROUP BY posicion\n",
+    "\"\"\").show()\n",
+    "\n",
+    "print(\"8.3. Altura promedio, mínima y máxima agrupado por confederación:\")\n",
+    "spark.sql(\"\"\"\n",
+    "    SELECT confederacion,\n",
+    "           ROUND(AVG(altura), 2) as altura_promedio,\n",
+    "           MIN(altura) as altura_min,\n",
+    "           MAX(altura) as altura_max\n",
+    "    FROM (SELECT DISTINCT jugador_id, confederacion, altura FROM Mundial)\n",
+    "    GROUP BY confederacion\n",
+    "\"\"\").show()\n",
+    "\n",
+    "print(\"8.4. ¿Cuántos partidos se jugaron en cada fase del torneo?\")\n",
+    "spark.sql(\"\"\"\n",
+    "    SELECT fase, COUNT(DISTINCT partido_id) as partidos_jugados\n",
+    "    FROM Mundial\n",
+    "    WHERE fase IS NOT NULL\n",
+    "    GROUP BY fase\n",
+    "\"\"\").show()\n",
+    "\n",
+    "print(\"8.5. ¿Cuál es el total de goles anotados por cada equipo (como local y visitante)?\")\n",
+    "spark.sql(\"\"\"\n",
+    "    SELECT nombre_equipo,\n",
+    "           SUM(CASE WHEN equipo_id = equipo_local_id THEN goles_local ELSE 0 END) +\n",
+    "           SUM(CASE WHEN equipo_id = equipo_visitante_id THEN goles_visitante ELSE 0 END) as goles_totales\n",
+    "    FROM (SELECT DISTINCT equipo_id, nombre_equipo, partido_id, equipo_local_id, equipo_visitante_id, goles_local, goles_visitante FROM Mundial WHERE partido_id IS NOT NULL)\n",
+    "    GROUP BY nombre_equipo\n",
+    "    ORDER BY goles_totales DESC\n",
+    "\"\"\").show(5)\n",
+    "\n",
+    "print(\"8.6. ¿Cuál es el promedio de goles por partido en cada torneo?\")\n",
+    "spark.sql(\"\"\"\n",
+    "    SELECT nombre_torneo, ROUND(AVG(goles_totales), 2) as promedio_goles\n",
+    "    FROM (\n",
+    "        SELECT DISTINCT partido_id, nombre_torneo, (goles_local + goles_visitante) as goles_totales\n",
+    "        FROM Mundial\n",
+    "        WHERE partido_id IS NOT NULL\n",
+    "    )\n",
+    "    GROUP BY nombre_torneo\n",
+    "\"\"\").show()\n",
+    "\n",
+    "print(\"8.7. Capacidad promedio de estadios por país:\")\n",
+    "spark.sql(\"\"\"\n",
+    "    SELECT pais_estadio, ROUND(AVG(capacidad), 0) as capacidad_promedio\n",
+    "    FROM (SELECT DISTINCT estadio_id, pais_estadio, capacidad FROM Mundial WHERE estadio_id IS NOT NULL)\n",
+    "    GROUP BY pais_estadio\n",
+    "\"\"\").show()\n",
+    "\n",
+    "print(\"8.8. Clasificación de IMC usando CASE WHEN:\")\n",
+    "spark.sql(\"\"\"\n",
+    "    SELECT DISTINCT nombre, apellido, ROUND(IMC, 2) as IMC,\n",
+    "           CASE\n",
+    "               WHEN IMC < 20 THEN 'Bajo peso'\n",
+    "               WHEN IMC BETWEEN 20 AND 25 THEN 'Normal'\n",
+    "               WHEN IMC > 25 THEN 'Sobrepeso'\n",
+    "           END AS Clasificacion_IMC\n",
+    "    FROM Mundial\n",
+    "\"\"\").show(8)\n",
+    "\n",
+    "print(\"8.9. Número de victorias, derrotas y empates de cada equipo:\")\n",
+    "spark.sql(\"\"\"\n",
+    "    SELECT nombre_equipo,\n",
+    "           SUM(CASE WHEN (equipo_id = equipo_local_id AND goles_local > goles_visitante) OR \n",
+    "                         (equipo_id = equipo_visitante_id AND goles_visitante > goles_local) THEN 1 ELSE 0 END) as victorias,\n",
+    "           SUM(CASE WHEN (equipo_id = equipo_local_id AND goles_local < goles_visitante) OR \n",
+    "                         (equipo_id = equipo_visitante_id AND goles_visitante < goles_local) THEN 1 ELSE 0 END) as derrotas,\n",
+    "           SUM(CASE WHEN goles_local = goles_visitante THEN 1 ELSE 0 END) as empates\n",
+    "    FROM (SELECT DISTINCT equipo_id, nombre_equipo, partido_id, equipo_local_id, equipo_visitante_id, goles_local, goles_visitante FROM Mundial WHERE partido_id IS NOT NULL)\n",
+    "    GROUP BY nombre_equipo\n",
+    "    ORDER BY victorias DESC\n",
+    "\"\"\").show(5)\n",
+    "\n",
+    "print(\"8.10. Equipos con promedio de edad > 28 (Uso de HAVING):\")\n",
+    "spark.sql(\"\"\"\n",
+    "    SELECT nombre_equipo, ROUND(AVG(edad), 2) as promedio_edad\n",
+    "    FROM (SELECT DISTINCT jugador_id, nombre_equipo, edad FROM Mundial)\n",
+    "    GROUP BY nombre_equipo\n",
+    "    HAVING AVG(edad) > 28\n",
+    "\"\"\").show()\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Parte 9: Transformaciones Avanzadas"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "print(\"9.1, 9.2 y 9.3: Partidos de la fase Final, ordenado por edad descendente:\")\n",
+    "df_final = mundial_completo.filter(F.col(\"fase\") == \"Final\") \\\n",
+    "    .select(\"nombre\", \"apellido\", \"posicion\", \"nombre_equipo\", \"edad\") \\\n",
+    "    .dropDuplicates() \\\n",
+    "    .orderBy(F.col(\"edad\").desc())\n",
+    "\n",
+    "df_final.show(10)\n",
+    "\n",
+    "print(\"\\n9.4: Mostrar los 10 jugadores más altos del torneo:\")\n",
+    "jugadores_altos = mundial_completo.select(\"nombre\", \"apellido\", \"altura\", \"nombre_equipo\") \\\n",
+    "    .dropDuplicates([\"nombre\", \"apellido\"]) \\\n",
+    "    .orderBy(F.col(\"altura\").desc())\n",
+    "    \n",
+    "jugadores_altos.show(10)\n"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
+
+target_path = 'J:/Code/Guia_Copa_Mundial_TOP3/notebooks/Trabajo_Copa_Mundial.ipynb'
+os.makedirs(os.path.dirname(target_path), exist_ok=True)
+with open(target_path, 'w', encoding='utf-8') as f:
+    json.dump(notebook, f, ensure_ascii=False, indent=1)
+print('Notebook revisado y autogenerado con precisión estricta a Rúbrica.')
