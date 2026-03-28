@@ -27,15 +27,27 @@ notebook = {
    "metadata": {},
    "outputs": [],
    "source": [
+    "# 1.1 Instalación de Java y Apache Spark (Ideal para Google Colab)\n",
+    "!apt-get update -qq > /dev/null\n",
+    "!apt-get install openjdk-11-jdk-headless -qq > /dev/null\n",
+    "!wget -q https://archive.apache.org/dist/spark/spark-3.5.1/spark-3.5.1-bin-hadoop3.tgz\n",
+    "!tar xf spark-3.5.1-bin-hadoop3.tgz\n",
+    "!pip install -q findspark\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
     "import os\n",
     "import sys\n",
     "import findspark\n",
     "\n",
-    "# Variables de Entorno y Configuración Crítica del Sistema Operativo\n",
-    "os.environ['PYSPARK_PYTHON'] = sys.executable\n",
-    "os.environ['PYSPARK_DRIVER_PYTHON'] = sys.executable\n",
-    "os.environ['HADOOP_HOME'] = r\"J:\\DevCodeApps\\hadoop\"\n",
-    "os.environ['SPARK_LOCAL_IP'] = \"127.0.0.1\"\n",
+    "# 1.2 Variables de Entorno (Ajustado para el entorno de Google Colab)\n",
+    "os.environ[\"JAVA_HOME\"] = \"/usr/lib/jvm/java-11-openjdk-amd64\"\n",
+    "os.environ[\"SPARK_HOME\"] = \"/content/spark-3.5.1-bin-hadoop3\"\n",
     "\n",
     "findspark.init()\n",
     "\n",
@@ -57,10 +69,7 @@ notebook = {
    "cell_type": "markdown",
    "metadata": {},
    "source": [
-    "## Parte 2: RDDs - Creación y Unión\n",
-    "**Nota Importante de Entorno:** Debido a que el presente equipo está ejecutando la versión pre-release experimental `Python 3.14+`, la librería de serialización nativa de PySpark (`cloudpickle`) experimenta desbordamientos de memoria (`Stack overflow`) al enviar funciones Lambda a los workers de RDD.\n",
-    "\n",
-    "Para efectos de evaluación (Rúbrica), se expone el código exacto de la sintaxis RDD requerida. Inmediatamente después, se provee la solución en DataFrames que corre nativamente en lenguaje Java/Scala en la JVM, superando el error del sistema operativo pre-release."
+    "## Parte 2: RDDs - Creación y Unión"
    ]
   },
   {
@@ -69,34 +78,31 @@ notebook = {
    "metadata": {},
    "outputs": [],
    "source": [
+    "# NOTA: Asegúrese de subir los archivos CSV a la carpeta '../data/' o ajuste este path a './'\n",
     "path_jugadores = \"../data/jugadores.csv\"\n",
     "\n",
-    "# ==========================================================================\n",
-    "# SOLUCIÓN TEÓRICA EXACTA A LA RÚBRICA (Sintaxis Completa RDD)\n",
-    "# ==========================================================================\n",
-    "'''\n",
-    "jugador1 = sc.textFile(path_jugadores, minPartitions=6) # 2.1\n",
-    "jugador2 = sc.textFile(path_jugadores, minPartitions=6) # 2.2\n",
+    "# 2.1 y 2.2 Crear RDDs llamados jugador1 y jugador2 con 6 particiones\n",
+    "jugador1 = sc.textFile(path_jugadores, minPartitions=6)\n",
+    "jugador2 = sc.textFile(path_jugadores, minPartitions=6)\n",
     "\n",
-    "jugadorTotal_bruto = jugador1.union(jugador2) # 2.3\n",
+    "# 2.3 Crear RDD jugadorTotal con la unión\n",
+    "jugadorTotal_bruto = jugador1.union(jugador2)\n",
     "header = jugadorTotal_bruto.first()\n",
     "jugadorTotal = jugadorTotal_bruto.filter(lambda row: row != header)\n",
     "\n",
-    "print(\"Cantidad de registros totales RDD:\", jugadorTotal.count()) # 2.4\n",
+    "# 2.4 Mostrar cantidad de registros\n",
+    "print(\"Cantidad total de registros unidos en jugadorTotal:\", jugadorTotal.count())\n",
     "\n",
+    "# 2.5 Convertir RDD en DataFrame 'jugadores'\n",
     "def parse_jugador(line):\n",
     "    cols = line.split(',')\n",
     "    return (int(cols[0]), cols[1], cols[2], int(cols[3]), int(cols[4]), int(cols[5]), cols[6], int(cols[7]))\n",
     "\n",
     "rdd_parsed = jugadorTotal.map(parse_jugador)\n",
-    "'''\n",
     "\n",
-    "# ==========================================================================\n",
-    "# EJECUCIÓN ROBUSTA: Bypass vía DataFrames para soportar Python 3.14 Local\n",
-    "# ==========================================================================\n",
     "schema_jugadores = StructType([\n",
     "    StructField(\"jugador_id\", IntegerType(), True),\n",
-    "    StructField(\"nombre\", StringType(), True),  # Cumplimiento Rúbrica 2.5\n",
+    "    StructField(\"nombre\", StringType(), True),  # Cumplimiento estricto\n",
     "    StructField(\"apellido\", StringType(), True),\n",
     "    StructField(\"edad\", IntegerType(), True),\n",
     "    StructField(\"altura\", IntegerType(), True),\n",
@@ -105,15 +111,9 @@ notebook = {
     "    StructField(\"equipo_id\", IntegerType(), True)\n",
     "])\n",
     "\n",
-    "df_1 = spark.read.csv(path_jugadores, header=True, schema=schema_jugadores).repartition(6)\n",
-    "df_2 = spark.read.csv(path_jugadores, header=True, schema=schema_jugadores).repartition(6)\n",
+    "jugadores = spark.createDataFrame(rdd_parsed, schema_jugadores)\n",
     "\n",
-    "jugadores = df_1.union(df_2).filter(F.col(\"jugador_id\").isNotNull())\n",
-    "\n",
-    "# 2.4 Mostrar cantidad de registros contenidos en jugadorTotal\n",
-    "print(f\"Cantidad total de registros unidos en jugadorTotal: {jugadores.count()}\")\n",
-    "\n",
-    "# 2.6 Mostrar el esquema y los tipos de datos utilizables del DataFrame\n",
+    "# 2.6 Mostrar el esquema final\n",
     "print(\"\\n--- Esquema y Muestra del DataFrame 'jugadores' (2.6) ---\")\n",
     "jugadores.printSchema()\n",
     "jugadores.show(5)\n"
@@ -123,8 +123,7 @@ notebook = {
    "cell_type": "markdown",
    "metadata": {},
    "source": [
-    "## Parte 3: RDDs - Transformaciones\n",
-    "De igual forma que en la parte 2, las evaluaciones Lambda en Python 3.14 experimentan latencias de pickling, por tanto se exponen y ejecutan idénticamente bajo el optimizador Catalyst."
+    "## Parte 3: RDDs - Transformaciones"
    ]
   },
   {
@@ -133,12 +132,11 @@ notebook = {
    "metadata": {},
    "outputs": [],
    "source": [
-    "'''\n",
     "# 3.1 Filtro por Edad > 30\n",
-    "MayorEdad_rdd = jugadorTotal.filter(lambda x: int(x.split(',')[3]) > 30)\n",
+    "MayorEdad = jugadorTotal.filter(lambda x: int(x.split(',')[3]) > 30)\n",
     "\n",
     "# 3.2 Filtro por Posición Defensa\n",
-    "Jugadores_Defensa_rdd = jugadorTotal.filter(lambda x: x.split(',')[6].strip() == 'Defensa')\n",
+    "Jugadores_Defensa = jugadorTotal.filter(lambda x: x.split(',')[6].strip() == 'Defensa')\n",
     "\n",
     "# 3.3 A mayúsculas (nombre y apellido)\n",
     "def to_upper_names(line):\n",
@@ -146,25 +144,16 @@ notebook = {
     "    cols[1] = cols[1].upper()\n",
     "    cols[2] = cols[2].upper()\n",
     "    return ','.join(cols)\n",
-    "jugadorTotal_upper = jugadorTotal.map(to_upper_names)\n",
-    "'''\n",
-    "\n",
-    "# Ejecución en DataFrames garantizando la completitud:\n",
-    "MayorEdad = jugadores.filter(F.col(\"edad\") > 30) # 3.1\n",
-    "Jugadores_Defensa = jugadores.filter(F.col(\"posicion\") == \"Defensa\") # 3.2\n",
-    "\n",
-    "jugadorTotal_mayusculas = jugadores \\\n",
-    "    .withColumn(\"nombre\", F.upper(F.col(\"nombre\"))) \\\n",
-    "    .withColumn(\"apellido\", F.upper(F.col(\"apellido\"))) # 3.3\n",
+    "jugadorTotal_mayusculas = jugadorTotal.map(to_upper_names)\n",
     "\n",
     "print(\"Muestra 3 registros de MayorEdad:\")\n",
-    "MayorEdad.show(3)\n",
+    "for r in MayorEdad.take(3): print(r)\n",
     "\n",
     "print(\"\\nMuestra 3 registros de Jugadores_Defensa:\")\n",
-    "Jugadores_Defensa.show(3)\n",
+    "for r in Jugadores_Defensa.take(3): print(r)\n",
     "\n",
     "print(\"\\nMuestra 3 registros de conversión a Mayúsculas:\")\n",
-    "jugadorTotal_mayusculas.show(3)\n"
+    "for r in jugadorTotal_mayusculas.take(3): print(r)\n"
    ]
   },
   {
@@ -424,4 +413,4 @@ target_path = 'J:/Code/Guia_Copa_Mundial_TOP3/notebooks/Trabajo_Copa_Mundial.ipy
 os.makedirs(os.path.dirname(target_path), exist_ok=True)
 with open(target_path, 'w', encoding='utf-8') as f:
     json.dump(notebook, f, ensure_ascii=False, indent=1)
-print('Notebook revisado y autogenerado con precisión estricta a Rúbrica.')
+print('Notebook revisado y autogenerado perfectamente para Google Colab.')
